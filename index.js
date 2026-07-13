@@ -21,15 +21,24 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
-    // Send a ping to confirm a successful connection
+
+    const db = client.db("batrox_courier");
+    const parcelCollection = db.collection("parcels");
+
+    app.get("/parcels", async (req, res) => {});
+
+    app.post("/parcels", async (req, res) => {
+      const parcel = req.body;
+      const result = await parcelCollection.insertOne(parcel);
+      res.send(result);
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Yeahhhhhhhhh, Pinged your deployment. You successfully connected to MongoDB!",
     );
   } finally {
-    // Ensures that the client will close when you finish/error
     // await client.close();
   }
 }
