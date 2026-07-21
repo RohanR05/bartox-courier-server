@@ -3,8 +3,8 @@ const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-
 require("dotenv").config();
+const stripe = require("stripe")(process.env.PAYMENT_SECURE);
 
 app.use(express.json());
 app.use(cors());
@@ -57,6 +57,27 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await parcelCollection.deleteOne(query);
       res.send(result);
+    });
+
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "USD",
+              unit_amount: 1500,
+              product_data: {
+                name: paymentInfo.parcelName,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.parcelName,
+        mode: "payment",
+        success_url: `${process.env.SITE_DOMAIN}/dashBoard/payment-seccess`,
+      });
     });
 
     await client.db("admin").command({ ping: 1 });
