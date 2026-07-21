@@ -59,26 +59,40 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/create-checkout-session", async (req, res) => {
-      const paymentInfo = req.body;
-      const session = await stripe.checkout.sessions.create({
-        line_items: [
-          {
-            price_data: {
-              currency: "USD",
-              unit_amount: 1500,
-              product_data: {
-                name: paymentInfo.parcelName,
-              },
+app.post("/create-checkout-session", async (req, res) => {
+  try {
+    const paymentInfo = req.body;
+    const amount = Math.round(parseFloat(paymentInfo.cost) * 100); // Math.round handles potential decimal amounts safely
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            unit_amount: amount,
+            product_data: {
+              name: paymentInfo.parcelTitle || "Parcel Delivery Fee",
             },
-            quantity: 1,
           },
-        ],
-        customer_email: paymentInfo.parcelName,
-        mode: "payment",
-        success_url: `${process.env.SITE_DOMAIN}/dashBoard/payment-seccess`,
-      });
+          quantity: 1,
+        },
+      ],
+      customer_email: paymentInfo.senderEmail, // Fixed: now passing actual email
+      mode: "payment",
+      metadata: {
+        parcelId: paymentInfo.parcelId,
+      },
+      success_url: `${process.env.SITE_DOMAIN}dashBoard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.SITE_DOMAIN}dashBoard/payment-cancelled`, // Fixed: changed cancelled_url -> cancel_url
     });
+
+    res.send({ url: session.url });
+  } catch (error) {
+    console.error("Stripe Checkout Error:", error);
+    res.status(500).send({ error: error.message });
+  }
+});
 
     await client.db("admin").command({ ping: 1 });
     console.log(
