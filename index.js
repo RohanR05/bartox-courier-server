@@ -116,96 +116,89 @@ async function run() {
       }
     });
 
-    app.patch("/payment-success", async (req, res) => {
-      try {
-        const sessionId = req.query.session_id;
+app.patch("/payment-success", async (req, res) => {
+  try {
+    const sessionId = req.query.session_id;
 
-        if (!sessionId) {
-          return res.status(400).send({
-            success: false,
-            message: "Missing session_id query parameter",
-          });
-        }
+    if (!sessionId) {
+      return res.status(400).send({
+        success: false,
+        message: "Missing session_id query parameter",
+      });
+    }
 
-        // 1. Retrieve the session from Stripe
-        const session = await stripe.checkout.sessions.retrieve(sessionId);
+    // 1. Retrieve session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-        // 2. Verify payment status
-        if (session.payment_status === "paid") {
-          const id = session.metadata?.parcelId;
+    if (session.payment_status === "paid") {
+      const id = session.metadata?.parcelId;
 
-          if (!id || !ObjectId.isValid(id)) {
-            return res.status(400).send({
-              success: false,
-              message: "Invalid or missing parcelId in metadata",
-            });
-          }
+      if (!id || !ObjectId.isValid(id)) {
+        return res.status(400).send({
+          success: false,
+          message: "Invalid or missing parcelId in metadata",
+        });
+      }
 
-          // Check if this payment was already recorded (e.g. page refresh)
-          const existingPayment = await paymentCollestion.findOne({
-            transactionId: session.payment_intent,
-          });
+      const transactionId = session.payment_intent;
 
-          if (existingPayment) {
-            const parcel = await parcelCollection.findOne({
-              _id: new ObjectId(id),
-            });
+      // 2. Safely process payment atomically using upsert
+      const paymentData = {
+        amount: session.amount_total / 100,
+        currency: session.currency,
+        customer_email: session.customer_details?.email || session.customer_email,
+        parcelId: id,
+        transactionId: transactionId,
+        paymentStatus: session.payment_status,
+        paidAt: new Date(),
+      };
 
-            return res.send({
-              success: true,
-              message: "Payment already processed",
-              transactionId: session.payment_intent,
-              trackingId: parcel?.trackingId || null,
-            });
-          }
+      // upsert: true inserts ONLY if transactionId doesn't exist yet
+      const paymentResult = await paymentCollestion.updateOne(
+        { transactionId: transactionId },
+        { $setOnInsert: paymentData },
+        { upsert: true }
+      );
 
-          const trackingId = generateTrackingId();
-          const query = { _id: new ObjectId(id) };
-          const update = {
+      // 3. Handle tracking ID update
+      let trackingId;
+      const existingParcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+
+      if (existingParcel?.trackingId) {
+        trackingId = existingParcel.trackingId;
+      } else {
+        trackingId = generateTrackingId();
+        await parcelCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
             $set: {
               paymentStatus: "paid",
               trackingId: trackingId,
             },
-          };
-
-          // Update the parcel status
-          const result = await parcelCollection.updateOne(query, update);
-
-          // Record the payment
-          const payment = {
-            amount: session.amount_total / 100,
-            currency: session.currency,
-            customer_email:
-              session.customer_details?.email || session.customer_email,
-            parcelId: session.metadata.parcelId,
-            transactionId: session.payment_intent,
-            paymentStatus: session.payment_status,
-            paidAt: new Date(),
-          };
-
-          const resultPayment = await paymentCollestion.insertOne(payment);
-
-          return res.send({
-            success: true,
-            modifyParcel: result,
-            paymentInfo: resultPayment,
-            trackingId: trackingId,
-            transactionId: session.payment_intent,
-          });
-        }
-
-        return res.status(400).send({
-          success: false,
-          message: "Payment status is not paid",
-        });
-      } catch (error) {
-        console.error("Error processing payment success:", error);
-        return res.status(500).send({
-          success: false,
-          message: error.message || "Internal server error",
-        });
+          }
+        );
       }
+
+      return res.send({
+        success: true,
+        message: paymentResult.upsertedCount > 0 ? "Payment recorded successfully" : "Payment already exists",
+        trackingId: trackingId,
+        transactionId: transactionId,
+      });
+    }
+
+    return res.status(400).send({
+      success: false,
+      message: "Payment status is not paid",
     });
+  } catch (error) {
+    console.error("Error processing payment success:", error);
+    return res.status(500).send({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+});
 
     await client.db("admin").command({ ping: 1 });
     console.log(
