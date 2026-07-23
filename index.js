@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
+const crypto = require("crypto");
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
@@ -8,6 +9,16 @@ const stripe = require("stripe")(process.env.PAYMENT_SECURE);
 
 app.use(express.json());
 app.use(cors());
+
+function generateTrackingId(prefix = "TRK") {
+  // Generates an 8-character uppercase hex string
+  const randomBytes = crypto.randomBytes(4).toString("hex").toUpperCase();
+  const timestamp = Date.now().toString(36).toUpperCase().slice(-4); // Adds temporal uniqueness
+
+  return `${prefix}-${timestamp}-${randomBytes}`;
+}
+
+console.log(generateTrackingId()); // e.g., TRK-LX89-A1B2C3D4
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.fxlcgfl.mongodb.net/?appName=Cluster0`;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -25,6 +36,7 @@ async function run() {
 
     const db = client.db("batrox_courier");
     const parcelCollection = db.collection("parcels");
+    const paymentCollestion = db.collection("payments");
 
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -62,7 +74,7 @@ async function run() {
     app.post("/create-checkout-session", async (req, res) => {
       try {
         const paymentInfo = req.body;
-        const amount = Math.round(parseFloat(paymentInfo.cost) * 100); // Math.round handles potential decimal amounts safely
+        const amount = Math.round(parseFloat(paymentInfo.cost) * 100);
 
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ["card"],
@@ -78,14 +90,24 @@ async function run() {
               quantity: 1,
             },
           ],
-          customer_email: paymentInfo.senderEmail, // Fixed: now passing actual email
+          customer_email: paymentInfo.senderEmail,
           mode: "payment",
           metadata: {
             parcelId: paymentInfo.parcelId,
           },
+          // Pass metadata down to the actual PaymentIntent so it shows up under Payments in the Dashboard
+          payment_intent_data: {
+            metadata: {
+              parcelId: paymentInfo.parcelId,
+            },
+            description: `Parcel Delivery Fee for ${paymentInfo.parcelTitle || paymentInfo.parcelId}`,
+          },
           success_url: `${process.env.SITE_DOMAIN}dashBoard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${process.env.SITE_DOMAIN}dashBoard/payment-cancelled`, // Fixed: changed cancelled_url -> cancel_url
+          cancel_url: `${process.env.SITE_DOMAIN}dashBoard/payment-cancelled`,
         });
+
+        // Log the generated ID so you can copy-paste search it in Stripe search bar
+        console.log("👉 GENERATED SESSION ID:", session.id);
 
         res.send({ url: session.url });
       } catch (error) {
@@ -94,10 +116,95 @@ async function run() {
       }
     });
 
-    app.patch("/payment-success", (req, res) => {
-      const sessionId = req.query.session_id;
-      console.log(sessionId);
-      res.send({ success: true });
+    app.patch("/payment-success", async (req, res) => {
+      try {
+        const sessionId = req.query.session_id;
+
+        if (!sessionId) {
+          return res.status(400).send({
+            success: false,
+            message: "Missing session_id query parameter",
+          });
+        }
+
+        // 1. Retrieve the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        // 2. Verify payment status
+        if (session.payment_status === "paid") {
+          const id = session.metadata?.parcelId;
+
+          if (!id || !ObjectId.isValid(id)) {
+            return res.status(400).send({
+              success: false,
+              message: "Invalid or missing parcelId in metadata",
+            });
+          }
+
+          // Check if this payment was already recorded (e.g. page refresh)
+          const existingPayment = await paymentCollestion.findOne({
+            transactionId: session.payment_intent,
+          });
+
+          if (existingPayment) {
+            const parcel = await parcelCollection.findOne({
+              _id: new ObjectId(id),
+            });
+
+            return res.send({
+              success: true,
+              message: "Payment already processed",
+              transactionId: session.payment_intent,
+              trackingId: parcel?.trackingId || null,
+            });
+          }
+
+          const trackingId = generateTrackingId();
+          const query = { _id: new ObjectId(id) };
+          const update = {
+            $set: {
+              paymentStatus: "paid",
+              trackingId: trackingId,
+            },
+          };
+
+          // Update the parcel status
+          const result = await parcelCollection.updateOne(query, update);
+
+          // Record the payment
+          const payment = {
+            amount: session.amount_total / 100,
+            currency: session.currency,
+            customer_email:
+              session.customer_details?.email || session.customer_email,
+            parcelId: session.metadata.parcelId,
+            transactionId: session.payment_intent,
+            paymentStatus: session.payment_status,
+            paidAt: new Date(),
+          };
+
+          const resultPayment = await paymentCollestion.insertOne(payment);
+
+          return res.send({
+            success: true,
+            modifyParcel: result,
+            paymentInfo: resultPayment,
+            trackingId: trackingId,
+            transactionId: session.payment_intent,
+          });
+        }
+
+        return res.status(400).send({
+          success: false,
+          message: "Payment status is not paid",
+        });
+      } catch (error) {
+        console.error("Error processing payment success:", error);
+        return res.status(500).send({
+          success: false,
+          message: error.message || "Internal server error",
+        });
+      }
     });
 
     await client.db("admin").command({ ping: 1 });
