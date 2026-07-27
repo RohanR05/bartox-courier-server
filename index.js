@@ -7,7 +7,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 // --- 2. Configurations & Services ---
 require("dotenv").config();
 
-const serviceAccount = require("./bai-coruier-firebase-adminsdk-fbsvc-864ac73877.json");
+const serviceAccount = require("./firebaseJWT.json");
 const { initializeApp, cert } = require("firebase-admin");
 
 initializeApp({
