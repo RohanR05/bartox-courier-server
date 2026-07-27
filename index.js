@@ -1,34 +1,46 @@
+// --- 1. Module Imports ---
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
-const app = express();
-const crypto = require("crypto");
-const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
+// --- 2. Configurations & Services ---
 require("dotenv").config();
+
+const serviceAccount = require("./bai-coruier-firebase-adminsdk-fbsvc-864ac73877.json");
+const { initializeApp, cert } = require("firebase-admin");
+
+initializeApp({
+  credential: cert(serviceAccount),
+});
+
 const stripe = require("stripe")(process.env.PAYMENT_SECURE);
+
+// --- 3. Express App Setup ---
+const app = express();
+const port = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cors());
 
-function generateTrackingId(prefix = "TRK") {
-  // Generates an 8-character uppercase hex string
-  const randomBytes = crypto.randomBytes(4).toString("hex").toUpperCase();
-  const timestamp = Date.now().toString(36).toUpperCase().slice(-4); // Adds temporal uniqueness
-
-  return `${prefix}-${timestamp}-${randomBytes}`;
-}
-
+// --- 4. Custom Middleware & Helper Functions ---
 const verifyFBToken = (req, res, next) => {
   const token = req.headers.authorization;
   if (!token) {
-    return res.status(401).send({ message: "UnAuthorized Acess" });
+    return res.status(401).send({ message: "UnAuthorized Access" });
   }
   next();
 };
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.fxlcgfl.mongodb.net/?appName=Cluster0`;
+function generateTrackingId(prefix = "TRK") {
+  const randomBytes = crypto.randomBytes(4).toString("hex").toUpperCase();
+  const timestamp = Date.now().toString(36).toUpperCase().slice(-4);
 
+  return `${prefix}-${timestamp}-${randomBytes}`;
+}
+
+// --- 5. Database Connection ---
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.fxlcgfl.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
   serverApi: {
