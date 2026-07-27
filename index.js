@@ -19,10 +19,17 @@ function generateTrackingId(prefix = "TRK") {
   return `${prefix}-${timestamp}-${randomBytes}`;
 }
 
-console.log(generateTrackingId()); // e.g., TRK-LX89-A1B2C3D4
+const verifyFBToken = (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "UnAuthorized Acess" });
+  }
+  next();
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.fxlcgfl.mongodb.net/?appName=Cluster0`;
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -207,7 +214,7 @@ async function run() {
       }
     });
 
-    app.get("/payments", async (req, res) => {
+    app.get("/payments", verifyFBToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
       if (email) {
