@@ -9,6 +9,7 @@ require("dotenv").config();
 
 const serviceAccount = require("./firebaseJWT.json");
 const { initializeApp, cert } = require("firebase-admin");
+const { getAuth } = require("firebase-admin/auth");
 
 initializeApp({
   credential: cert(serviceAccount),
@@ -24,12 +25,28 @@ app.use(express.json());
 app.use(cors());
 
 // --- 4. Custom Middleware & Helper Functions ---
-const verifyFBToken = (req, res, next) => {
+const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
-  if (!token) {
-    return res.status(401).send({ message: "UnAuthorized Access" });
+
+  if (!token || !token.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "Unauthorized Access" });
   }
-  next();
+
+  try {
+    const idToken = token.split(" ")[1];
+
+    // 1. Correct method name: verifyIdToken
+    const decoded = await getAuth().verifyIdToken(idToken);
+
+    // 2. Attach decoded user info to req so your routes can use it
+    req.decodedUser = decoded;
+
+    console.log("Decoded user:", decoded);
+    next();
+  } catch (err) {
+    console.error("Firebase auth error:", err.message);
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
 };
 
 function generateTrackingId(prefix = "TRK") {
@@ -231,6 +248,9 @@ async function run() {
       const query = {};
       if (email) {
         query.customer_email = email;
+        if (email !== req.decodedUser.email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
       }
       const cursor = paymentCollestion.find(query);
       const result = await cursor.toArray();
