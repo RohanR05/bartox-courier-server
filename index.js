@@ -245,15 +245,22 @@ async function run() {
 
     app.get("/payments", verifyFBToken, async (req, res) => {
       const email = req.query.email;
+      console.log("Query email received:", email);
+      console.log("Decoded user email:", req.decodedUser?.email);
+
       const query = {};
       if (email) {
-        query.customer_email = email;
-        if (email !== req.decodedUser.email) {
+        if (email.toLowerCase() !== req.decodedUser?.email?.toLowerCase()) {
           return res.status(403).send({ message: "forbidden access" });
         }
+        query.customer_email = email;
       }
-      const cursor = paymentCollestion.find(query);
-      const result = await cursor.toArray();
+
+      console.log("Constructed MongoDB Query:", query);
+
+      const result = await paymentCollestion.find(query).toArray();
+      console.log("Found records count:", result.length);
+
       res.send(result);
     });
 
