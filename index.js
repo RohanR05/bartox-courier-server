@@ -74,7 +74,7 @@ async function run() {
     const db = client.db("batrox_courier");
     const parcelCollection = db.collection("parcels");
     const paymentCollestion = db.collection("payments");
-    const usersCollestion = db.collection("users");
+    const usersCollection = db.collection("users");
 
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -267,9 +267,19 @@ async function run() {
 
     app.post("/users", async (req, res) => {
       const user = req.body;
-      user.role = "user";
-      user.createdAt = new Date();
-      const result = await usersCollestion.insertOne(user);
+      const email = user.email;
+      const userExists = await usersCollection.findOne({ email: email });
+
+      if (userExists) {
+        return res.send({ message: "user exists", insertedId: null });
+      }
+      const newUser = {
+        ...user,
+        role: "user",
+        createdAt: new Date(),
+      };
+
+      const result = await usersCollection.insertOne(newUser);
       res.send(result);
     });
 
