@@ -74,6 +74,7 @@ async function run() {
     const db = client.db("batrox_courier");
     const parcelCollection = db.collection("parcels");
     const paymentCollestion = db.collection("payments");
+    const usersCollestion = db.collection("users");
 
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -261,6 +262,14 @@ async function run() {
       const result = await paymentCollestion.find(query).toArray();
       console.log("Found records count:", result.length);
 
+      res.send(result);
+    });
+
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      user.role = "user";
+      user.createdAt = new Date();
+      const result = await usersCollestion.insertOne(user);
       res.send(result);
     });
 
