@@ -292,6 +292,15 @@ async function run() {
       const result = await ridersCollection.insertOne(rider);
       res.send(result);
     });
+    // rider get api//
+    app.get("/riders", async (req, res) => {
+      const query = {};
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const result = await ridersCollection.find(query).toArray();
+      res.send(result);
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
