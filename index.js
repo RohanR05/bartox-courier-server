@@ -301,6 +301,30 @@ async function run() {
       const result = await ridersCollection.find(query).toArray();
       res.send(result);
     });
+    // rider change status //
+    app.patch("/riders/:id", async (req, res) => {
+      try {
+        const { id } = req.params; // Read ID from route URL params
+        const { status } = req.body; // Read status value from request body
+
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            status: status, // Use the dynamic variable value
+          },
+        };
+
+        const result = await ridersCollection.updateOne(query, updateDoc);
+        res.send(result);
+      } catch (error) {
+        res
+          .status(400)
+          .send({
+            message: "Invalid ID format or update failed",
+            error: error.message,
+          });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
