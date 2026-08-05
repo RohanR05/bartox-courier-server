@@ -284,6 +284,11 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
+
     // rider from post api//
     app.post("/riders", async (req, res) => {
       const rider = req.body;
