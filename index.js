@@ -315,14 +315,26 @@ async function run() {
         };
 
         const result = await ridersCollection.updateOne(query, updateDoc);
+
+        if (status === "approved") {
+          const email = req.body.email;
+          const userQuery = { email };
+          const updateUser = {
+            $set: {
+              role: "rider",
+            },
+          };
+          const userResult = await usersCollection.updateOne(
+            userQuery,
+            updateUser,
+          );
+        }
         res.send(result);
       } catch (error) {
-        res
-          .status(400)
-          .send({
-            message: "Invalid ID format or update failed",
-            error: error.message,
-          });
+        res.status(400).send({
+          message: "Invalid ID format or update failed",
+          error: error.message,
+        });
       }
     });
 
