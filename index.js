@@ -289,6 +289,13 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      res.send({ role: user?.role || "user" });
+    });
+
     app.patch("/user/:id", async (req, res) => {
       const id = req.params.id;
       const roleInfo = req.body;
