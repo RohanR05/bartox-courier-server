@@ -289,6 +289,19 @@ async function run() {
       res.send(result);
     });
 
+    app.patch("/user/:id", async (req, res) => {
+      const id = req.params.id;
+      const roleInfo = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          role: roleInfo.role,
+        },
+      };
+      const result = await usersCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
+
     // rider from post api//
     app.post("/riders", async (req, res) => {
       const rider = req.body;
