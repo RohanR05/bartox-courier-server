@@ -77,6 +77,18 @@ async function run() {
     const usersCollection = db.collection("users");
     const ridersCollection = db.collection("rider");
 
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decodedUser?.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
+
     app.get("/parcels", async (req, res) => {
       const query = {};
       const { email } = req.query;
@@ -289,25 +301,30 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/users/:email/role", async (req, res) => {
+    app.get("/users/:email/role", verifyFBToken, async (req, res) => {
       const email = req.params.email;
       const query = { email };
       const user = await usersCollection.findOne(query);
       res.send({ role: user?.role || "user" });
     });
 
-    app.patch("/user/:id", async (req, res) => {
-      const id = req.params.id;
-      const roleInfo = req.body;
-      const query = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          role: roleInfo.role,
-        },
-      };
-      const result = await usersCollection.updateOne(query, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/user/:id/role",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const roleInfo = req.body;
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            role: roleInfo.role,
+          },
+        };
+        const result = await usersCollection.updateOne(query, updateDoc);
+        res.send(result);
+      },
+    );
 
     // rider from post api//
     app.post("/riders", async (req, res) => {
@@ -327,41 +344,46 @@ async function run() {
       res.send(result);
     });
     // rider change status //
-    app.patch("/riders/:id", async (req, res) => {
-      try {
-        const { id } = req.params; // Read ID from route URL params
-        const { status } = req.body; // Read status value from request body
+    app.patch(
+      "/riders/:id/role",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { id } = req.params; // Read ID from route URL params
+          const { status } = req.body; // Read status value from request body
 
-        const query = { _id: new ObjectId(id) };
-        const updateDoc = {
-          $set: {
-            status: status, // Use the dynamic variable value
-          },
-        };
-
-        const result = await ridersCollection.updateOne(query, updateDoc);
-
-        if (status === "approved") {
-          const email = req.body.email;
-          const userQuery = { email };
-          const updateUser = {
+          const query = { _id: new ObjectId(id) };
+          const updateDoc = {
             $set: {
-              role: "rider",
+              status: status, // Use the dynamic variable value
             },
           };
-          const userResult = await usersCollection.updateOne(
-            userQuery,
-            updateUser,
-          );
+
+          const result = await ridersCollection.updateOne(query, updateDoc);
+
+          if (status === "approved") {
+            const email = req.body.email;
+            const userQuery = { email };
+            const updateUser = {
+              $set: {
+                role: "rider",
+              },
+            };
+            const userResult = await usersCollection.updateOne(
+              userQuery,
+              updateUser,
+            );
+          }
+          res.send(result);
+        } catch (error) {
+          res.status(400).send({
+            message: "Invalid ID format or update failed",
+            error: error.message,
+          });
         }
-        res.send(result);
-      } catch (error) {
-        res.status(400).send({
-          message: "Invalid ID format or update failed",
-          error: error.message,
-        });
-      }
-    });
+      },
+    );
 
     await client.db("admin").command({ ping: 1 });
     console.log(
