@@ -297,7 +297,23 @@ async function run() {
     });
 
     app.get("/users", async (req, res) => {
-      const result = await usersCollection.find().toArray();
+      const searchText = req.query.searchText;
+      let query = {};
+
+      if (searchText) {
+        query = {
+          $or: [
+            { displayName: { $regex: searchText, $options: "i" } },
+            { email: { $regex: searchText, $options: "i" } },
+          ],
+        };
+      }
+
+      const result = await usersCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+
       res.send(result);
     });
 
