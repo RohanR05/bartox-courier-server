@@ -344,46 +344,41 @@ async function run() {
       res.send(result);
     });
     // rider change status //
-    app.patch(
-      "/riders/:id/role",
-      verifyFBToken,
-      verifyAdmin,
-      async (req, res) => {
-        try {
-          const { id } = req.params; // Read ID from route URL params
-          const { status } = req.body; // Read status value from request body
+    app.patch("/riders/:id", verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params; // Read ID from route URL params
+        const { status } = req.body; // Read status value from request body
 
-          const query = { _id: new ObjectId(id) };
-          const updateDoc = {
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            status: status, // Use the dynamic variable value
+          },
+        };
+
+        const result = await ridersCollection.updateOne(query, updateDoc);
+
+        if (status === "approved") {
+          const email = req.body.email;
+          const userQuery = { email };
+          const updateUser = {
             $set: {
-              status: status, // Use the dynamic variable value
+              role: "rider",
             },
           };
-
-          const result = await ridersCollection.updateOne(query, updateDoc);
-
-          if (status === "approved") {
-            const email = req.body.email;
-            const userQuery = { email };
-            const updateUser = {
-              $set: {
-                role: "rider",
-              },
-            };
-            const userResult = await usersCollection.updateOne(
-              userQuery,
-              updateUser,
-            );
-          }
-          res.send(result);
-        } catch (error) {
-          res.status(400).send({
-            message: "Invalid ID format or update failed",
-            error: error.message,
-          });
+          const userResult = await usersCollection.updateOne(
+            userQuery,
+            updateUser,
+          );
         }
-      },
-    );
+        res.send(result);
+      } catch (error) {
+        res.status(400).send({
+          message: "Invalid ID format or update failed",
+          error: error.message,
+        });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
