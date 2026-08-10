@@ -91,9 +91,12 @@ async function run() {
 
     app.get("/parcels", async (req, res) => {
       const query = {};
-      const { email } = req.query;
+      const { email, parcelSatatus } = req.query;
       if (email) {
         query.senderEmail = email;
+      }
+      if (parcelSatatus) {
+        query.parcelSatatus=parcelSatatus
       }
       const options = { sort: { createdAt: -1 } };
       const cursor = parcelCollection.find(query, options);
@@ -227,6 +230,7 @@ async function run() {
               {
                 $set: {
                   paymentStatus: "paid",
+                  parcelSatatus: "pending-pickup",
                   trackingId: trackingId,
                 },
               },
@@ -272,7 +276,10 @@ async function run() {
 
       console.log("Constructed MongoDB Query:", query);
 
-      const result = await paymentCollestion.find(query).toArray();
+      const result = await paymentCollestion
+        .find(query)
+        .sort({ paidAt: -1 })
+        .toArray();
       console.log("Found records count:", result.length);
 
       res.send(result);
