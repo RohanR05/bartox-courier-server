@@ -96,7 +96,7 @@ async function run() {
         query.senderEmail = email;
       }
       if (parcelSatatus) {
-        query.parcelSatatus=parcelSatatus
+        query.parcelSatatus = parcelSatatus;
       }
       const options = { sort: { createdAt: -1 } };
       const cursor = parcelCollection.find(query, options);
@@ -334,7 +334,7 @@ async function run() {
     app.patch(
       "/user/:id/role",
       verifyFBToken,
-      verifyAdmin,
+      // verifyAdmin,
       async (req, res) => {
         const id = req.params.id;
         const roleInfo = req.body;
@@ -353,6 +353,7 @@ async function run() {
     app.post("/riders", async (req, res) => {
       const rider = req.body;
       rider.status = "pending";
+      rider.workStatus = "Not yet Available";
       rider.createdAt = new Date();
       const result = await ridersCollection.insertOne(rider);
       res.send(result);
@@ -367,15 +368,16 @@ async function run() {
       res.send(result);
     });
     // rider change status //
-    app.patch("/riders/:id", verifyFBToken, verifyAdmin, async (req, res) => {
+    app.patch("/riders/:id", verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params; // Read ID from route URL params
         const { status } = req.body; // Read status value from request body
-
+        const { workStatus } = req.body;
         const query = { _id: new ObjectId(id) };
         const updateDoc = {
           $set: {
-            status: status, // Use the dynamic variable value
+            status: status,
+            workStatus: workStatus, // Use the dynamic variable value
           },
         };
 
@@ -400,6 +402,32 @@ async function run() {
           message: "Invalid ID format or update failed",
           error: error.message,
         });
+      }
+    });
+
+    // DELETE: Remove a rider by ID
+    app.delete("/riders/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        // Validate MongoDB ObjectId format
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid Rider ID format" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const result = await ridersCollection.deleteOne(query);
+
+        if (result.deletedCount === 1) {
+          res.send({ deletedCount: 1, message: "Rider deleted successfully" });
+        } else {
+          res.status(404).send({ deletedCount: 0, message: "Rider not found" });
+        }
+      } catch (error) {
+        console.error("Error deleting rider:", error);
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
       }
     });
 
