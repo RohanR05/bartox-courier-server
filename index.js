@@ -358,15 +358,48 @@ async function run() {
       const result = await ridersCollection.insertOne(rider);
       res.send(result);
     });
-    // rider get api//
+
+    // Rider GET API with Filtering & Basic Error Handling
+    // GET /riders - Fetch and filter riders dynamically
     app.get("/riders", async (req, res) => {
-      const query = {};
-      if (req.query.status) {
-        query.status = req.query.status;
+      try {
+        const { status, district, workStatus } = req.query;
+        const query = {};
+
+        // 1. Status Filter (Case-insensitive match, e.g., "approved")
+        if (status) {
+          query.status = { $regex: new RegExp(`^${status.trim()}$`, "i") };
+        }
+
+        // 2. Work Status Filter (Case-insensitive match, e.g., "Available")
+        if (workStatus) {
+          query.workStatus = {
+            $regex: new RegExp(`^${workStatus.trim()}$`, "i"),
+          };
+        }
+
+        // 3. District Filter (Matches both riderDistrict & district in DB)
+        if (district) {
+          const cleanDistrict = district.trim();
+          query.$or = [
+            {
+              riderDistrict: { $regex: new RegExp(`^${cleanDistrict}$`, "i") },
+            },
+            { district: { $regex: new RegExp(`^${cleanDistrict}$`, "i") } },
+          ];
+        }
+
+        const result = await ridersCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching riders:", error);
+        res.status(500).send({ message: "Failed to fetch riders" });
       }
-      const result = await ridersCollection.find(query).toArray();
-      res.send(result);
     });
+
     // rider change status //
     app.patch("/riders/:id", verifyFBToken, async (req, res) => {
       try {
