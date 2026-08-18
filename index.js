@@ -111,6 +111,52 @@ async function run() {
       res.send(result);
     });
 
+app.patch("/parcels/:id", async (req, res) => {
+  try {
+    const { id } = req.params; // Correct parameter name matching route :id
+    const { riderId, riderName, riderEmail } = req.body;
+
+    if (!id || !riderId) {
+      return res.status(400).send({ message: "Missing parcel ID or rider ID" });
+    }
+
+    // 1. Update Parcel Status & Assign Rider Information
+    const parcelQuery = { _id: new ObjectId(id) };
+    const parcelUpdateDoc = {
+      $set: {
+        parcelSatatus: "rider_assigned", // Matched status field name
+        riderId: riderId,
+        riderEmail: riderEmail,
+        riderName: riderName,
+        assignedAt: new Date(),
+      },
+    };
+    const parcelResult = await parcelCollection.updateOne(parcelQuery, parcelUpdateDoc);
+
+    // 2. Update Rider Work Status to Busy / In Delivery
+    const riderQuery = { _id: new ObjectId(riderId) };
+    const riderUpdateDoc = {
+      $set: {
+        workStatus: "in_delivery", // Corrected spelling from in_devilary
+      },
+    };
+    const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdateDoc);
+
+    // 3. Send Success Response
+    res.send({
+      message: "Rider assigned successfully",
+      parcelResult,
+      riderResult,
+    });
+  } catch (error) {
+    console.error("Error assigning rider:", error);
+    res.status(500).send({
+      message: "Failed to assign rider",
+      error: error.message,
+    });
+  }
+});
+
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
       parcel.createdAt = new Date();
