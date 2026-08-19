@@ -104,6 +104,31 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/parcels/rider", async (req, res) => {
+      try {
+        const { riderEmail, parcelSatatus } = req.query;
+
+        const query = {};
+        if (riderEmail) {
+          query.riderEmail = riderEmail;
+        }
+        if (parcelSatatus) {
+          query.parcelSatatus = parcelSatatus;
+        }
+
+        const result = await parcelCollection.find(query).toArray();
+        res.status(200).send(result);
+      } catch (error) {
+        console.error("Error fetching rider parcels:", error);
+        res
+          .status(500)
+          .send({
+            message: "Failed to retrieve parcels",
+            error: error.message,
+          });
+      }
+    });
+
     app.get("/parcels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -111,51 +136,59 @@ async function run() {
       res.send(result);
     });
 
-app.patch("/parcels/:id", async (req, res) => {
-  try {
-    const { id } = req.params; // Correct parameter name matching route :id
-    const { riderId, riderName, riderEmail } = req.body;
+    app.patch("/parcels/:id", async (req, res) => {
+      try {
+        const { id } = req.params; // Correct parameter name matching route :id
+        const { riderId, riderName, riderEmail } = req.body;
 
-    if (!id || !riderId) {
-      return res.status(400).send({ message: "Missing parcel ID or rider ID" });
-    }
+        if (!id || !riderId) {
+          return res
+            .status(400)
+            .send({ message: "Missing parcel ID or rider ID" });
+        }
 
-    // 1. Update Parcel Status & Assign Rider Information
-    const parcelQuery = { _id: new ObjectId(id) };
-    const parcelUpdateDoc = {
-      $set: {
-        parcelSatatus: "rider_assigned", // Matched status field name
-        riderId: riderId,
-        riderEmail: riderEmail,
-        riderName: riderName,
-        assignedAt: new Date(),
-      },
-    };
-    const parcelResult = await parcelCollection.updateOne(parcelQuery, parcelUpdateDoc);
+        // 1. Update Parcel Status & Assign Rider Information
+        const parcelQuery = { _id: new ObjectId(id) };
+        const parcelUpdateDoc = {
+          $set: {
+            parcelSatatus: "rider_assigned", // Matched status field name
+            riderId: riderId,
+            riderEmail: riderEmail,
+            riderName: riderName,
+            assignedAt: new Date(),
+          },
+        };
+        const parcelResult = await parcelCollection.updateOne(
+          parcelQuery,
+          parcelUpdateDoc,
+        );
 
-    // 2. Update Rider Work Status to Busy / In Delivery
-    const riderQuery = { _id: new ObjectId(riderId) };
-    const riderUpdateDoc = {
-      $set: {
-        workStatus: "in_delivery", // Corrected spelling from in_devilary
-      },
-    };
-    const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdateDoc);
+        // 2. Update Rider Work Status to Busy / In Delivery
+        const riderQuery = { _id: new ObjectId(riderId) };
+        const riderUpdateDoc = {
+          $set: {
+            workStatus: "in_delivery", // Corrected spelling from in_devilary
+          },
+        };
+        const riderResult = await ridersCollection.updateOne(
+          riderQuery,
+          riderUpdateDoc,
+        );
 
-    // 3. Send Success Response
-    res.send({
-      message: "Rider assigned successfully",
-      parcelResult,
-      riderResult,
+        // 3. Send Success Response
+        res.send({
+          message: "Rider assigned successfully",
+          parcelResult,
+          riderResult,
+        });
+      } catch (error) {
+        console.error("Error assigning rider:", error);
+        res.status(500).send({
+          message: "Failed to assign rider",
+          error: error.message,
+        });
+      }
     });
-  } catch (error) {
-    console.error("Error assigning rider:", error);
-    res.status(500).send({
-      message: "Failed to assign rider",
-      error: error.message,
-    });
-  }
-});
 
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
@@ -380,18 +413,42 @@ app.patch("/parcels/:id", async (req, res) => {
     app.patch(
       "/user/:id/role",
       verifyFBToken,
-      // verifyAdmin,
+      verifyAdmin,
       async (req, res) => {
-        const id = req.params.id;
-        const roleInfo = req.body;
-        const query = { _id: new ObjectId(id) };
-        const updateDoc = {
-          $set: {
-            role: roleInfo.role,
-          },
-        };
-        const result = await usersCollection.updateOne(query, updateDoc);
-        res.send(result);
+        try {
+          const id = req.params.id;
+          const { role } = req.body;
+
+          // Validate ObjectId
+          if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ message: "Invalid User ID format" });
+          }
+
+          // Validate allowed roles
+          const allowedRoles = ["user", "rider", "admin"];
+          if (!role || !allowedRoles.includes(role)) {
+            return res.status(400).send({ message: "Invalid or missing role" });
+          }
+
+          const query = { _id: new ObjectId(id) };
+          const updateDoc = {
+            $set: {
+              role: role,
+              updatedAt: new Date(),
+            },
+          };
+
+          const result = await usersCollection.updateOne(query, updateDoc);
+
+          if (result.matchedCount === 0) {
+            return res.status(404).send({ message: "User not found" });
+          }
+
+          res.send(result);
+        } catch (error) {
+          console.error("Error updating user role:", error);
+          res.status(500).send({ message: "Failed to update user role" });
+        }
       },
     );
 
