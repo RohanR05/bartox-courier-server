@@ -113,19 +113,17 @@ async function run() {
           query.riderEmail = riderEmail;
         }
         if (parcelSatatus) {
-          query.parcelSatatus = parcelSatatus;
+          query.parcelSatatus = { $in: ["rider_assigned", "rider_arriving"] };
         }
 
         const result = await parcelCollection.find(query).toArray();
         res.status(200).send(result);
       } catch (error) {
         console.error("Error fetching rider parcels:", error);
-        res
-          .status(500)
-          .send({
-            message: "Failed to retrieve parcels",
-            error: error.message,
-          });
+        res.status(500).send({
+          message: "Failed to retrieve parcels",
+          error: error.message,
+        });
       }
     });
 
@@ -188,6 +186,18 @@ async function run() {
           error: error.message,
         });
       }
+    });
+
+    app.patch("/parcels/:id/status", async (req, res) => {
+      const { delivaryStatus } = req.body;
+      const query = { _id: new ObjectId(req.params.id) };
+      const updateDoc = {
+        $set: {
+          delivaryStatus: delivaryStatus,
+        },
+      };
+      const result = await parcelCollection.updateOne(query, updateDoc);
+      res.send(result);
     });
 
     app.post("/parcels", async (req, res) => {
