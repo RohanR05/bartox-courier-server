@@ -91,12 +91,12 @@ async function run() {
 
     app.get("/parcels", async (req, res) => {
       const query = {};
-      const { email, parcelSatatus } = req.query;
+      const { email, parcelStatus } = req.query;
       if (email) {
         query.senderEmail = email;
       }
-      if (parcelSatatus) {
-        query.parcelSatatus = parcelSatatus;
+      if (parcelStatus) {
+        query.parcelStatus = parcelStatus;
       }
       const options = { sort: { createdAt: -1 } };
       const cursor = parcelCollection.find(query, options);
@@ -106,14 +106,14 @@ async function run() {
 
     app.get("/parcels/rider", async (req, res) => {
       try {
-        const { riderEmail, parcelSatatus } = req.query;
+        const { riderEmail, parcelStatus } = req.query;
 
         const query = {};
         if (riderEmail) {
           query.riderEmail = riderEmail;
         }
-        if (parcelSatatus) {
-          query.parcelSatatus = { $in: ["rider_assigned", "rider_arriving"] };
+        if (parcelStatus) {
+          query.parcelStatus = { $in: ["rider_assigned", "rider_arriving"] };
         }
 
         const result = await parcelCollection.find(query).toArray();
@@ -149,7 +149,7 @@ async function run() {
         const parcelQuery = { _id: new ObjectId(id) };
         const parcelUpdateDoc = {
           $set: {
-            parcelSatatus: "rider_assigned", // Matched status field name
+            parcelStatus: "rider_assigned", // Matched status field name
             riderId: riderId,
             riderEmail: riderEmail,
             riderName: riderName,
@@ -189,11 +189,11 @@ async function run() {
     });
 
     app.patch("/parcels/:id/status", async (req, res) => {
-      const { delivaryStatus } = req.body;
+      const { parcelStatus } = req.body;
       const query = { _id: new ObjectId(req.params.id) };
       const updateDoc = {
         $set: {
-          delivaryStatus: delivaryStatus,
+          parcelStatus: parcelStatus,
         },
       };
       const result = await parcelCollection.updateOne(query, updateDoc);
@@ -319,7 +319,7 @@ async function run() {
               {
                 $set: {
                   paymentStatus: "paid",
-                  parcelSatatus: "pending-pickup",
+                  parcelStatus: "pending-pickup",
                   trackingId: trackingId,
                 },
               },
