@@ -165,7 +165,7 @@ async function run() {
         const riderQuery = { _id: new ObjectId(riderId) };
         const riderUpdateDoc = {
           $set: {
-            workStatus: "in_delivery", // Corrected spelling from in_devilary
+            workStatus: "in_delivery",
           },
         };
         const riderResult = await ridersCollection.updateOne(
@@ -189,13 +189,25 @@ async function run() {
     });
 
     app.patch("/parcels/:id/status", async (req, res) => {
-      const { parcelStatus } = req.body;
+      const { parcelStatus, riderId } = req.body;
       const query = { _id: new ObjectId(req.params.id) };
       const updateDoc = {
         $set: {
           parcelStatus: parcelStatus,
         },
       };
+      if (parcelStatus === "delivered") {
+        const riderQuery = { _id: new ObjectId(riderId) };
+        const riderUpdateDoc = {
+          $set: {
+            workStatus: "available",
+          },
+        };
+        const riderResult = await ridersCollection.updateOne(
+          riderQuery,
+          riderUpdateDoc,
+        );
+      }
       const result = await parcelCollection.updateOne(query, updateDoc);
       res.send(result);
     });
