@@ -112,11 +112,19 @@ async function run() {
         if (riderEmail) {
           query.riderEmail = riderEmail;
         }
-        if (parcelStatus) {
-          query.parcelStatus = { $in: ["rider_assigned", "rider_arriving"] };
+        if (parcelStatus !== "delivered") {
+          query.parcelStatus = { $nin: ["delivered"] };
+        } else {
+          query.parcelStatus = parcelStatus;
         }
 
+        console.log("Query received:", req.query);
+        console.log("Mongo filter:", query);
+
         const result = await parcelCollection.find(query).toArray();
+
+        console.log("Matched count:", result.length);
+
         res.status(200).send(result);
       } catch (error) {
         console.error("Error fetching rider parcels:", error);
