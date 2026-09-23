@@ -433,6 +433,22 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/users/:email", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (req.decodedUser.email !== email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      const user = await usersCollection.findOne({ email });
+
+      if (!user) {
+        return res.status(404).send({ message: "user not found" });
+      }
+
+      res.send(user);
+    });
+
     app.get("/users/:email/role", verifyFBToken, async (req, res) => {
       const email = req.params.email;
       const query = { email };
