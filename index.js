@@ -640,6 +640,17 @@ async function run() {
       }
     });
 
+    app.get("/trackings/:trackingId/logs", async (req, res) => {
+      try {
+        const { trackingId } = req.params;
+        const result = await trackingCollection.find({ trackingId }).toArray();
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to fetch tracking logs" });
+      }
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Yeahhhhhhhhh, Pinged your deployment. You successfully connected to MongoDB!",
