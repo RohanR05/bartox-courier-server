@@ -246,7 +246,10 @@ async function run() {
 
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
+      const trackingId = generateTrackingId();
       parcel.createdAt = new Date();
+      parcel.trackingId = trackingId;
+      logTracking(trackingId, "parcel_created");
       const result = await parcelCollection.insertOne(parcel);
       res.send(result);
     });
@@ -261,7 +264,35 @@ async function run() {
     app.post("/create-checkout-session", async (req, res) => {
       try {
         const paymentInfo = req.body;
-        const amount = Math.round(parseFloat(paymentInfo.cost) * 100);
+
+        const cost = parseFloat(paymentInfo.cost);
+        if (!cost || cost <= 0) {
+          return res.status(400).send({ error: "Invalid or missing cost" });
+        }
+        const amount = Math.round(cost * 100);
+
+        if (!paymentInfo.parcelId || !ObjectId.isValid(paymentInfo.parcelId)) {
+          return res.status(400).send({ error: "Invalid or missing parcelId" });
+        }
+
+        const parcel = await parcelCollection.findOne({
+          _id: new ObjectId(paymentInfo.parcelId),
+        });
+
+        if (!parcel) {
+          return res.status(404).send({ error: "Parcel not found" });
+        }
+
+        // 👇 placed here — resolved once, before building metadata
+        let trackingId = parcel.trackingId;
+
+        if (!trackingId) {
+          trackingId = generateTrackingId();
+          await parcelCollection.updateOne(
+            { _id: new ObjectId(paymentInfo.parcelId) },
+            { $set: { trackingId } },
+          );
+        }
 
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ["card"],
@@ -281,8 +312,8 @@ async function run() {
           mode: "payment",
           metadata: {
             parcelId: paymentInfo.parcelId,
+            trackingId: trackingId,
           },
-          // Pass metadata down to the actual PaymentIntent so it shows up under Payments in the Dashboard
           payment_intent_data: {
             metadata: {
               parcelId: paymentInfo.parcelId,
@@ -293,7 +324,6 @@ async function run() {
           cancel_url: `${process.env.SITE_DOMAIN}dashBoard/payment-cancelled`,
         });
 
-        // Log the generated ID so you can copy-paste search it in Stripe search bar
         console.log("👉 GENERATED SESSION ID:", session.id);
 
         res.send({ url: session.url });
@@ -317,76 +347,88 @@ async function run() {
         // 1. Retrieve session from Stripe
         const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-        if (session.payment_status === "paid") {
-          const id = session.metadata?.parcelId;
+        if (session.payment_status !== "paid") {
+          return res.status(400).send({
+            success: false,
+            message: "Payment status is not paid",
+          });
+        }
 
-          if (!id || !ObjectId.isValid(id)) {
-            return res.status(400).send({
-              success: false,
-              message: "Invalid or missing parcelId in metadata",
-            });
-          }
+        const id = session.metadata?.parcelId;
 
-          const transactionId = session.payment_intent;
+        if (!id || !ObjectId.isValid(id)) {
+          return res.status(400).send({
+            success: false,
+            message: "Invalid or missing parcelId in metadata",
+          });
+        }
 
-          // 2. Safely process payment atomically using upsert
-          const paymentData = {
-            amount: session.amount_total / 100,
-            currency: session.currency,
-            customer_email:
-              session.customer_details?.email || session.customer_email,
-            parcelId: id,
-            transactionId: transactionId,
-            paymentStatus: session.payment_status,
-            paidAt: new Date(),
-          };
+        const trackingId = session.metadata?.trackingId;
 
-          // upsert: true inserts ONLY if transactionId doesn't exist yet
-          const paymentResult = await paymentCollestion.updateOne(
-            { transactionId: transactionId },
-            { $setOnInsert: paymentData },
-            { upsert: true },
-          );
+        if (!trackingId) {
+          return res.status(400).send({
+            success: false,
+            message: "Missing trackingId in session metadata",
+          });
+        }
 
-          // 3. Handle tracking ID update
-          let trackingId;
+        const transactionId = session.payment_intent;
+
+        // 2. Safely process payment atomically using upsert
+        const paymentData = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customer_email:
+            session.customer_details?.email || session.customer_email,
+          parcelId: id,
+          transactionId: transactionId,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+
+        // upsert: true inserts ONLY if transactionId doesn't exist yet
+        const paymentResult = await paymentCollestion.updateOne(
+          { transactionId: transactionId },
+          { $setOnInsert: paymentData },
+          { upsert: true },
+        );
+
+        const parcelUpdateResult = await parcelCollection.updateOne(
+          { _id: new ObjectId(id), paymentStatus: { $ne: "paid" } },
+          {
+            $set: {
+              paymentStatus: "paid",
+              parcelStatus: "pending-pickup",
+            },
+          },
+        );
+
+        if (parcelUpdateResult.modifiedCount > 0) {
+          await logTracking(trackingId, "pending-pickup");
+        } else {
+          // Parcel already had a trackingId — check it matches what Stripe sent.
           const existingParcel = await parcelCollection.findOne({
             _id: new ObjectId(id),
           });
 
-          if (existingParcel?.trackingId) {
-            trackingId = existingParcel.trackingId;
-          } else {
-            trackingId = generateTrackingId();
-            await parcelCollection.updateOne(
-              { _id: new ObjectId(id) },
-              {
-                $set: {
-                  paymentStatus: "paid",
-                  parcelStatus: "pending-pickup",
-                  trackingId: trackingId,
-                },
-              },
+          if (
+            existingParcel?.trackingId &&
+            existingParcel.trackingId !== trackingId
+          ) {
+            console.warn(
+              `Tracking ID mismatch for parcel ${id}: DB has "${existingParcel.trackingId}", session metadata has "${trackingId}"`,
             );
-
-            // log this tracking event only when it's newly created
-            await logTracking(trackingId, "pending-pickup");
           }
-
-          return res.send({
-            success: true,
-            message:
-              paymentResult.upsertedCount > 0
-                ? "Payment recorded successfully"
-                : "Payment already exists",
-            trackingId: trackingId,
-            transactionId: transactionId,
-          });
         }
 
-        return res.status(400).send({
-          success: false,
-          message: "Payment status is not paid",
+        return res.send({
+          success: true,
+          message:
+            paymentResult.upsertedCount > 0
+              ? "Payment recorded successfully"
+              : "Payment already exists",
+          trackingId: trackingId,
+          transactionId: transactionId,
         });
       } catch (error) {
         console.error("Error processing payment success:", error);
